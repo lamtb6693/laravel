@@ -1,0 +1,78 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+
+  code_quality:
+    runs-on: ubuntu-latest
+    container: 
+      image: foxsystem/phpfox-fpm:7.4-laravel-xdebug
+      env:
+        MYSQL_HOST: mysql
+        MYSQL_DATABASE: phpfoxdb
+        MYSQL_USER: phpfox
+        MYSQL_ROOT_PASSWORD: 123456
+        MYSQL_PASSWORD: 123456
+        MYSQL_PORT: 3306
+        ALLOW_EMPTY_PASSWORD: "yes"
+        REDIS_MASTER_HOST: redis
+        REDIS_MASTER_PORT_NUMBER: 6379
+        POSTGRES_DB: phpfoxdb
+        POSTGRES_USER: phpfox
+        POSTGRES_PASSWORD: 123456
+        POSTGRES_HOST_AUTH_METHOD: trust
+        POSTGRES_MAX_CONNECTIONS: 500
+    if :
+      contains('
+        refs/heads/develop
+        refs/heads/master
+      ', github.ref)
+    services:
+      redis:
+        image: bitnami/redis:latest
+      postgres:
+        image: foxsystem/postgres:13.2
+    steps:
+      - run: cp .env.testing.example .env # it requires connect database, don't know why. Should check later.
+      - run: php -d memory_limit=-1 /opt/bitnami/php/bin/composer update
+      - run: php artisan phpfox:install
+      - run: composer phpstan
+    continue-on-error: true
+
+  test_postgres:
+     runs-on: ubuntu-latest
+     container: 
+      image: foxsystem/phpfox-fpm:7.4-laravel-xdebug
+      env:
+        MYSQL_HOST: mysql
+        MYSQL_DATABASE: phpfoxdb
+        MYSQL_USER: phpfox
+        MYSQL_ROOT_PASSWORD: 123456
+        MYSQL_PASSWORD: 123456
+        MYSQL_PORT: 3306
+        ALLOW_EMPTY_PASSWORD: "yes"
+        REDIS_MASTER_HOST: redis
+        REDIS_MASTER_PORT_NUMBER: 6379
+        POSTGRES_DB: phpfoxdb
+        POSTGRES_USER: phpfox
+        POSTGRES_PASSWORD: 123456
+        POSTGRES_HOST_AUTH_METHOD: trust
+        POSTGRES_MAX_CONNECTIONS: 500
+        POSTGRES_SHARED_BUFFERS: 256MB
+     services:
+      redis:
+        image: bitnami/redis:latest
+      postgres:
+        image: foxsystem/postgres:13.2
+     needs: [ code_quality ]
+     steps:
+       - run: cp .env.testing.example .env.testing
+       - run: cp .env.testing.example .env
+       - run: php -d memory_limit=-1 /opt/bitnami/php/bin/composer update
+       - run: php artisan phpfox:install && php artisan phpfox:seed
+       - run: sh phpunit.sh
